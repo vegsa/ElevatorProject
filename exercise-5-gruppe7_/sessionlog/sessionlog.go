@@ -19,8 +19,8 @@ import (
 )
 
 var disconnect bool
-var thisOrder int
-var nextOrders int
+var thisSession int
+var nextSessions int
 var path = "./log.txt"
 var log []byte //{[]byte,int}
 var initFlag = true
@@ -68,31 +68,31 @@ func GetSessionLog() []byte {
 }
 
 //Take a new order and store it to disk if it is not already there.
-//place == 1 for orders that will be executed now (e.g a new order for floor 3 if elev is moving from 1 -> 4)
-//place == 0 for orders that is assigned to the elevator but does not fit into the current run (e.g. new order floor 1 while elev moving from 2 -> 4)
-func StoreInSessionLog(order int, place int) {
+//place == 1 for orders that will be executed in this session (e.g a new order for floor 3 if elev is moving from 1 -> 4)
+//place == 0 for orders that is assigned to the elevator will not be executed in this session (e.g. new order floor 1 while elev moving from 2 -> 4)
+func StoreInSessionLog(order int, placeInSession bool) {
 	if createFile() == true {
 		log = GetSessionLog()
-		thisOrder = int(log[0])
-		if thisOrder >= len(log) {
-			thisOrder = len(log) - nextOrders - 1
+		thisSession = int(log[0])
+		if thisSession >= len(log) {
+			thisSession = len(log) - nextSessions - 1
 		}
 		//put order in right place
 		if newOrder(log[1:], byte(order)) {
-			if place == 1 {
-				thisOrder = thisOrder + 1
-				println(thisOrder)
-				log = append([]byte{byte(thisOrder)}, log...)
+			if placeInSession == true {
+				thisSession = thisSession + 1
+				println(thisSession)
+				log = append([]byte{byte(thisSession)}, log...)
 				log[1] = byte(order)
-				sortOrders(log[1:thisOrder+1], statemachine.GetDirection())
+				sortOrders(log[1:thisSession+1], statemachine.GetDirection())
 				fmt.Println("sorted")
-			} else if place == 0 {
-				nextOrders = nextOrders + 1
+			} else if placeInSession == false {
+				nextSessions = nextSessions + 1
 				log = append(log, byte(order))
 				if statemachine.GetDirection() == 1 {
-					sort.Slice(log[thisOrder+1:1+thisOrder+nextOrders], func(i, j int) bool { return log[i] < log[j] })
+					sort.Slice(log[thisSession+1:1+thisSession+nextSessions], func(i, j int) bool { return log[i] < log[j] })
 				} else if statemachine.GetDirection() == -1 {
-					sort.Slice(log[thisOrder+1:1+thisOrder+nextOrders], func(i, j int) bool { return log[i] < log[j] })
+					sort.Slice(log[thisSession+1:1+thisSession+nextSessions], func(i, j int) bool { return log[i] < log[j] })
 				}
 			}
 			fmt.Println("Queue:", log)
@@ -124,9 +124,9 @@ func DeleteOrder() {
 	sLog := GetSessionLog()
 	copy(sLog[1:], sLog[2:])
 	sLog = sLog[:len(sLog)-1]
-	thisOrder -= 1
-	fmt.Println("To", thisOrder)
-	sLog[0] = byte(thisOrder)
+	thisSession -= 1
+	fmt.Println("To", thisSession)
+	sLog[0] = byte(thisSession)
 	_ = ioutil.WriteFile(path, sLog, 0644)
 	if len(sLog) < 1 {
 		statemachine.SetIdle()
@@ -151,13 +151,13 @@ func LogExecuter() {
 					time.Sleep(2 * time.Second)
 					elevio.SetDoorOpenLamp(false)
 					sLog = GetSessionLog()
-					if thisOrder >= 1 && len(sLog) > 1 {
+					if thisSession >= 1 && len(sLog) > 1 {
 						statemachine.SettoFloor(int(sLog[1]))
 						elevio.SetMotorDirection(elevio.MotorDirection(statemachine.GetDirection()))
-					} else if nextOrders >= 1 {
-						thisOrder = nextOrders
-						nextOrders = 0
-						sLog[0] = byte(thisOrder)
+					} else if nextSessions >= 1 {
+						thisSession = nextSessions
+						nextSessions = 0
+						sLog[0] = byte(thisSession)
 						statemachine.SettoFloor(int(sLog[1]))
 						_ = ioutil.WriteFile(path, sLog, 0644)
 						elevio.SetMotorDirection(elevio.MotorDirection(statemachine.GetDirection()))

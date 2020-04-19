@@ -25,10 +25,10 @@ func handleCabcall(order elevio.ButtonEvent) {
 		time.Sleep(2 * time.Second)
 		elevio.SetDoorOpenLamp(false)
 	} else if idle == true || (((motorDir == 1) == (order.Floor > atFloor)) && ((motorDir == 1) == (order.Floor >= atFloor))) {
-		slog.StoreInSessionLog(order.Floor, 1)
+		slog.StoreInSessionLog(order.Floor, true)
 		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	} else {
-		slog.StoreInSessionLog(order.Floor, 0)
+		slog.StoreInSessionLog(order.Floor, false)
 		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	}
 }

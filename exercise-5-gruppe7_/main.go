@@ -1,5 +1,17 @@
 package main
 
+//********
+// Multiple elevator system code
+//********
+// Contains the following modules
+// -Order handler
+// -network
+// -orderhandler
+// -hallcallhandler
+// -elevator_io
+// -sessionlog
+// -statemachine
+
 import (
 	"time"
 
