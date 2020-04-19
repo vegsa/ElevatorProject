@@ -18,7 +18,7 @@ func GetDoorOpen() bool {
 	return doorOpen
 }
 
-func GetFloor()int{
+func GetFloor() int {
 	return floor
 }
 
@@ -54,21 +54,20 @@ func GettoFloor() int {
 	return toFloor
 }
 
-func GetNewFloor()bool{
+func GetNewFloor() bool {
 	return newFloor
 }
 
-func SetNewFloor(x bool){
+func SetNewFloor(x bool) {
 	newFloor = x
 }
 
-
-func CheckFloor(){
+func CheckFloor() {
 	drv_floors := make(chan int)
 	go elevio.PollFloorSensor(drv_floors)
-	for{
-		select{
-		case floorSensor := <- drv_floors:
+	for {
+		select {
+		case floorSensor := <-drv_floors:
 			SetNewFloor(true)
 			floor = floorSensor
 			elevio.SetFloorIndicator(floor)

@@ -1,30 +1,30 @@
-package orderhandler
+package order_handler
+
+//********
+//Have a routine to receive local button pushes. If they are cab calls they are handled in the package. Hall calls are transmitted to all elevators.
+//********
 
 import (
 	"fmt"
 	"time"
+
 	elevio "../elev_driver"
 	network "../network_module"
 	slog "../sessionlog"
 	statemachine "../stateMachine"
-	//cs "../compute_score"
 )
 
-var numFloors = 4		// Is only used for the stop button now.
+var numFloors = 4
 
-// []
-// {}	
-
-
-func handleCabcall(order elevio.ButtonEvent){
+func handleCabcall(order elevio.ButtonEvent) {
 	idle := statemachine.IsIdle()
 	motorDir := statemachine.GetDirection()
 	atFloor := statemachine.GetFloor()
-	if (atFloor == order.Floor && elevio.GetFloor() != -1) {
+	if atFloor == order.Floor && elevio.GetFloor() != -1 {
 		elevio.SetDoorOpenLamp(true)
 		time.Sleep(2 * time.Second)
 		elevio.SetDoorOpenLamp(false)
-	} else if(idle == true || (((motorDir == 1) == (order.Floor>atFloor)) && ((motorDir == 1) ==(order.Floor>=atFloor)))){
+	} else if idle == true || (((motorDir == 1) == (order.Floor > atFloor)) && ((motorDir == 1) == (order.Floor >= atFloor))) {
 		slog.StoreInSessionLog(order.Floor, 1)
 		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	} else {
@@ -32,7 +32,6 @@ func handleCabcall(order elevio.ButtonEvent){
 		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	}
 }
-
 
 func CheckButtons() {
 	drv_buttons := make(chan elevio.ButtonEvent)
@@ -46,11 +45,11 @@ func CheckButtons() {
 	for {
 		select {
 		case a := <-drv_buttons:
-			fmt.Println("new bttn")
+			fmt.Println("Cab call")
 			if a.Button == 2 {
 				handleCabcall(a)
 			} else {
-				fmt.Println("hall")
+				fmt.Println("Hall call")
 				if slog.GetDisconnect() == true {
 					network.ElevDisconnect(a)
 				} else {
@@ -62,7 +61,7 @@ func CheckButtons() {
 			fmt.Printf("obstruct %+v\n", a)
 			if a == false {
 				slog.Reconnect()
-			} 
+			}
 
 		case a := <-drv_stop:
 			fmt.Printf("stop %+v\n", a)

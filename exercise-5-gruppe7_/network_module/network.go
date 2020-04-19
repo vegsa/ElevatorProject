@@ -4,16 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	//"encoding/json"
+	"time"
+
 	elevio "../elev_driver"
+	hallcall "../hall_call_handler"
 	statemachine "../stateMachine"
-	//orderHandler "../order_handler"
-	cs "../compute_score"
-	//slog "../sessionlog"
 	"./drivers/bcast"
 	"./drivers/localip"
-	"time"
-	//"./network/peers"
 )
 
 var id string
@@ -34,31 +31,31 @@ var lastId int
 var idState int
 
 type Score struct {
-	Id      string
-	Score	int
+	Id    string
+	Score int
 }
 
 type Neworder struct {
-	Order	elevio.ButtonEvent
+	Order   elevio.ButtonEvent
 	Floor   int
-	Dir 	int
-	Id      string	
-	Idle	bool
+	Dir     int
+	Id      string
+	Idle    bool
 	OrderId int
 }
 
 type StateMsg struct {
-	Dir		int
-	Id 		string
-	Idle	bool
-	AtFloor	int
+	Dir     int
+	Id      string
+	Idle    bool
+	AtFloor int
 	StateId int
 }
 
 type takeOrder struct {
-	ElevId		string
-	MessageId	int
-} 
+	ElevId    string
+	MessageId int
+}
 
 var orderTx = make(chan Neworder)
 var orderRx = make(chan Neworder)
@@ -67,7 +64,7 @@ var stateRX = make(chan StateMsg)
 var takeOrderTX = make(chan takeOrder)
 var takeOrderRx = make(chan takeOrder)
 
-func InitNetwork(){
+func InitNetwork() {
 	// Our id can be anything. Here we pass it on the command line, using
 	//  `go run main.go -id=our_id`
 	flag.StringVar(&id, "id", "", "id of this peer")
@@ -87,7 +84,7 @@ func InitNetwork(){
 	}
 	fmt.Println("ID 1:", id)
 	// We make channels for sending and receiving our custom data types
-	
+
 	// ... and start the transmitter/receiver pair on some port
 	// These functions can take any number of channels! It is also possible to
 	//  start multiple transmitters/receivers on the same port.
@@ -102,27 +99,27 @@ func InitNetwork(){
 }
 
 func transmitStates(stateId int) {
-	var	sm StateMsg
+	var sm StateMsg
 	sm.Id = id
-	sm.AtFloor= statemachine.GetFloor()
+	sm.AtFloor = statemachine.GetFloor()
 	sm.Dir = statemachine.GetDirection()
 	sm.Idle = statemachine.IsIdle()
 	sm.StateId = stateId
-	stateTX <-sm
+	stateTX <- sm
 }
 
 // Receives the orders from the other elevator and communicates with it.
 func NetworkReceive() {
 	ElevScore1 := Score{
-		Id: id,
-		Score: -100, 
+		Id:    id,
+		Score: -100,
 	}
 	ElevScore2 := Score{
-		Id: id,
+		Id:    id,
 		Score: -100,
 	}
 
-	var takeo takeOrder 
+	var takeo takeOrder
 
 	//Check for new messages
 	for {
@@ -136,14 +133,14 @@ func NetworkReceive() {
 			for i := 0; i < 5; i++ {
 				transmitStates(stateId)
 			}
-			ElevScore1.Score = cs.ComputeScore(statemachine.GetDirection(),order.Order,statemachine.GetFloor(),statemachine.IsIdle())
+			ElevScore1.Score = hallcall.ComputeScore(statemachine.GetDirection(), order.Order, statemachine.GetFloor(), statemachine.IsIdle())
 			ElevScore1.Id = id
-			ElevScore2.Score = cs.ComputeScore(order.Dir,order.Order,order.Floor,order.Idle)
+			ElevScore2.Score = hallcall.ComputeScore(order.Dir, order.Order, order.Floor, order.Idle)
 			ElevScore2.Id = order.Id
 			take := ""
 			toMessageId = toMessageId + 1
 			takeo.MessageId = toMessageId
-			if (ElevScore2.Score >= ElevScore1.Score) {
+			if ElevScore2.Score >= ElevScore1.Score {
 				takeo.ElevId = ElevScore2.Id
 				for i := 0; i < 5; i++ {
 					takeOrderTX <- takeo
@@ -160,14 +157,14 @@ func NetworkReceive() {
 				to := 1
 				for to == 1 {
 					select {
-					case takeOrder := <- takeOrderRx:
-						if takeOrder.MessageId != lastId{
+					case takeOrder := <-takeOrderRx:
+						if takeOrder.MessageId != lastId {
 							lastId = takeOrder.MessageId
 							to = 2
-							if (takeOrder.ElevId == id) {
+							if takeOrder.ElevId == id {
 								fmt.Println("Take order2 receive")
-								cs.HandleHallCall(order.Order, ElevScore1.Score)
-							} 
+								hallcall.HandleHallCall(order.Order, ElevScore1.Score)
+							}
 						}
 					}
 				}
@@ -193,46 +190,46 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 	newOrder.OrderId = orderId
 
 	ElevScore1 := Score{
-		Id: id,
-		Score: -100, 
-	}
-	ElevScore2 := Score{
-		Id: id,
+		Id:    id,
 		Score: -100,
 	}
-	
+	ElevScore2 := Score{
+		Id:    id,
+		Score: -100,
+	}
+
 	//Send new order
 	for i := 0; i < 5; i++ {
 		orderTx <- newOrder
 	}
 	runloop := 1
 
-	disconn := time.Tick(200*time.Millisecond)
+	disconn := time.Tick(200 * time.Millisecond)
 	for runloop == 1 {
 		select {
 		// Communication with the other elevator.
-		case states := <- stateRX: 
+		case states := <-stateRX:
 			if states.StateId == idState {
 				break
 			}
 			idState = states.StateId
 			runloop = 2
-			ElevScore1.Score = cs.ComputeScore(newOrder.Dir, order,newOrder.Floor,newOrder.Idle)
+			ElevScore1.Score = hallcall.ComputeScore(newOrder.Dir, order, newOrder.Floor, newOrder.Idle)
 			ElevScore1.Id = id
-			ElevScore2.Score = cs.ComputeScore(states.Dir,order,states.AtFloor,states.Idle)
+			ElevScore2.Score = hallcall.ComputeScore(states.Dir, order, states.AtFloor, states.Idle)
 			ElevScore2.Id = states.Id
-			
+
 			to := 1
 			for to == 1 {
 				select {
-				case takeOrder := <- takeOrderRx: 
-					
-					if takeOrder.MessageId != lastId{
+				case takeOrder := <-takeOrderRx:
+
+					if takeOrder.MessageId != lastId {
 						lastId = takeOrder.MessageId
 						to = 2
-						if (takeOrder.ElevId == id) {
-							cs.HandleHallCall(order, ElevScore1.Score)
-						} else{
+						if takeOrder.ElevId == id {
+							hallcall.HandleHallCall(order, ElevScore1.Score)
+						} else {
 							messageTransmit = messageTransmit + 1
 							takeo.MessageId = messageTransmit
 							takeo.ElevId = ElevScore2.Id
@@ -245,11 +242,11 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 				}
 			}
 		// If the other elevator does not answer.
-		case <- disconn:
+		case <-disconn:
 			NetworkDisconnected(order)
 			runloop = 2
 		}
-	} 
+	}
 }
 
 // If the other elevator does not answer this handles the order.
@@ -257,11 +254,11 @@ func NetworkDisconnected(order elevio.ButtonEvent) {
 	atFloor := statemachine.GetFloor()
 	motorDir := statemachine.GetDirection()
 	idle := statemachine.IsIdle()
-	score := cs.ComputeScore(motorDir, order, atFloor, idle)
-	cs.HandleHallCall(order, score)
+	score := hallcall.ComputeScore(motorDir, order, atFloor, idle)
+	hallcall.HandleHallCall(order, score)
 }
 
-// If elevator "power" is disconnected this handles and sends the 
+// If elevator "power" is disconnected this handles and sends the
 // orders over to the other elevator. Works almost as NetworkTransmit
 // but this does not have the ability to take the order.
 func ElevDisconnect(order elevio.ButtonEvent) {
@@ -275,16 +272,16 @@ func ElevDisconnect(order elevio.ButtonEvent) {
 	newOrder.Idle = statemachine.IsIdle()
 	orderId = orderId + 1
 	newOrder.OrderId = orderId
-	
+
 	for i := 0; i < 5; i++ {
 		orderTx <- newOrder
 	}
-	
+
 	runloop := 1
 	for runloop == 1 {
-		select{
+		select {
 
-		case states := <- stateRX:
+		case states := <-stateRX:
 			if states.StateId == idState {
 				break
 			}
@@ -292,10 +289,10 @@ func ElevDisconnect(order elevio.ButtonEvent) {
 			to := 1
 			for to == 1 {
 				select {
-				case takeOrder := <- takeOrderRx:
+				case takeOrder := <-takeOrderRx:
 					if takeOrder.MessageId != lastId {
 						to = 2
-						lastId  = takeOrder.MessageId
+						lastId = takeOrder.MessageId
 						messageTransmit = messageTransmit + 1
 						takeo.MessageId = messageTransmit
 						takeo.ElevId = states.Id

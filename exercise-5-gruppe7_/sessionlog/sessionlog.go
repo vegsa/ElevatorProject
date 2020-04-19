@@ -1,12 +1,17 @@
-package sessionlog
+package session_log
+
+//********
+// Handles the local file, "log", containing orders that are being executed now and in the future.
+// Also contains a log executer that executes the physical actions on the elevator.
+//********
 
 import (
 	"fmt"
 	"io/ioutil"
 	"os"
 	"sort"
-	"time"
 	"sync"
+	"time"
 
 	elevio "../elev_driver"
 	statemachine "../stateMachine"
@@ -18,57 +23,53 @@ var thisOrder int
 var nextOrders int
 var path = "./log.txt"
 var log []byte //{[]byte,int}
-var initFlag =true
-var mutex = &sync.Mutex{}
+var initFlag = true
+var logMutex = &sync.Mutex{}
 
-func sortOrders(numbers []byte,direction int) []byte {
-    //Start the loop in reverse order, so the loop will start with length
-    //which is equal to the length of input array and then loop untill   //reaches 1
-    for i := len(numbers); i > 0; i-- {
-       //The inner loop will first iterate through the full length
-       //the next iteration will be through n-1
-       // the next will be through n-2 and so on
-       for j := 1; j < i; j++ {
-            if direction== 1{
-                if numbers[j-1] > numbers[j] {
-                    intermediate := numbers[j]
-                    numbers[j] = numbers[j-1]
-                    numbers[j-1] = intermediate
-                }    
-            }else if direction == -1{
-                if numbers[j-1] < numbers[j] {
-                    intermediate := numbers[j]
-                    numbers[j] = numbers[j-1]
-                    numbers[j-1] = intermediate
-                }    
-            }
-                    
-        }
-    }
-    return numbers
-  }
+//Simple bubble sort to sort orders in log
+func sortOrders(numbers []byte, direction int) []byte {
+	for i := len(numbers); i > 0; i-- {
+		for j := 1; j < i; j++ {
+			if direction == 1 {
+				if numbers[j-1] > numbers[j] {
+					intermediate := numbers[j]
+					numbers[j] = numbers[j-1]
+					numbers[j-1] = intermediate
+				}
+			} else if direction == -1 {
+				if numbers[j-1] < numbers[j] {
+					intermediate := numbers[j]
+					numbers[j] = numbers[j-1]
+					numbers[j-1] = intermediate
+				}
+			}
 
-func newOrder(slice []byte, val byte) (bool) {
-    for _, item := range slice {
-        if item == val {
-            return false
-        }
-    }
-    return true
+		}
+	}
+	return numbers
 }
 
+//Make sure that the new order is not redundant with something already in the log
+func newOrder(slice []byte, val byte) bool {
+	for _, item := range slice {
+		if item == val {
+			return false
+		}
+	}
+	return true
+}
+
+//Returns the current session log read from disk
 func GetSessionLog() []byte {
-	mutex.Lock()
+	logMutex.Lock()
 	data, _ := ioutil.ReadFile("log.txt")
-	mutex.Unlock()
+	logMutex.Unlock()
 	return data
 }
 
-// When we start the program with orders in the log, thisOrder has the 
-// value 254 when we add a order, which will give a fatal error
-// when we sort the orders because then we say that we are going to sort
-// the 256 elements in log which is not true.
-
+//Take a new order and store it to disk if it is not already there.
+//place == 1 for orders that will be executed now (e.g a new order for floor 3 if elev is moving from 1 -> 4)
+//place == 0 for orders that is assigned to the elevator but does not fit into the current run (e.g. new order floor 1 while elev moving from 2 -> 4)
 func StoreInSessionLog(order int, place int) {
 	if createFile() == true {
 		log = GetSessionLog()
@@ -77,13 +78,13 @@ func StoreInSessionLog(order int, place int) {
 			thisOrder = len(log) - nextOrders - 1
 		}
 		//put order in right place
-		if newOrder(log[1:],byte(order)){
+		if newOrder(log[1:], byte(order)) {
 			if place == 1 {
 				thisOrder = thisOrder + 1
 				println(thisOrder)
 				log = append([]byte{byte(thisOrder)}, log...)
-				log[1] = byte(order) // put in 2 position
-				sortOrders(log[1:thisOrder+1],statemachine.GetDirection())
+				log[1] = byte(order)
+				sortOrders(log[1:thisOrder+1], statemachine.GetDirection())
 				fmt.Println("sorted")
 			} else if place == 0 {
 				nextOrders = nextOrders + 1
@@ -94,19 +95,35 @@ func StoreInSessionLog(order int, place int) {
 					sort.Slice(log[thisOrder+1:1+thisOrder+nextOrders], func(i, j int) bool { return log[i] < log[j] })
 				}
 			}
-			fmt.Println("Queue:",log)
-			mutex.Lock()
+			fmt.Println("Queue:", log)
+			logMutex.Lock()
 			_ = ioutil.WriteFile(path, log, 0644)
-			mutex.Unlock()
+			logMutex.Unlock()
 		}
-		
+
 	}
 }
 
+// create "log.txt" file if it does not exists
+func createFile() bool {
+	var _, err = os.Stat(path)
+	if os.IsNotExist(err) {
+		var file, err = os.Create(path)
+		ioutil.WriteFile(path, []byte{0}, 0644)
+		if isError(err) {
+			return false
+		}
+		defer file.Close()
+		return true
+	}
+	return true
+}
+
+//Delete the first order in log and save to disk
 func DeleteOrder() {
 	sLog := GetSessionLog()
-	copy(sLog[1:], sLog[2:])  // Shift a[i+1:] left one index.
-	sLog = sLog[:len(sLog)-1] // Truncate slice.
+	copy(sLog[1:], sLog[2:])
+	sLog = sLog[:len(sLog)-1]
 	thisOrder -= 1
 	fmt.Println("To", thisOrder)
 	sLog[0] = byte(thisOrder)
@@ -116,7 +133,8 @@ func DeleteOrder() {
 	}
 }
 
-func QueueWatchdog() {
+//Continously checking if any new orders have been stored in SessionLog and make the elev move to desired floor
+func LogExecuter() {
 	for {
 		if statemachine.GetNewFloor() {
 			sLog := GetSessionLog()
@@ -127,13 +145,13 @@ func QueueWatchdog() {
 					elevio.SetButtonLamp(elevio.ButtonType(elevio.BT_HallUp), statemachine.GetFloor(), false)
 					elevio.SetButtonLamp(elevio.ButtonType(elevio.BT_HallDown), statemachine.GetFloor(), false)
 					turnoff.TurnOffLightTransmit(statemachine.GetFloor())
-					
+
 					elevio.SetMotorDirection(elevio.MD_Stop)
 					elevio.SetDoorOpenLamp(true)
 					time.Sleep(2 * time.Second)
 					elevio.SetDoorOpenLamp(false)
 					sLog = GetSessionLog()
-					if thisOrder >= 1 && len(sLog) > 1{
+					if thisOrder >= 1 && len(sLog) > 1 {
 						statemachine.SettoFloor(int(sLog[1]))
 						elevio.SetMotorDirection(elevio.MotorDirection(statemachine.GetDirection()))
 					} else if nextOrders >= 1 {
@@ -147,7 +165,7 @@ func QueueWatchdog() {
 				}
 			}
 			statemachine.SetNewFloor(false)
-		} else if statemachine.IsIdle(){
+		} else if statemachine.IsIdle() {
 			sLog := GetSessionLog()
 			if len(sLog) > 1 {
 				statemachine.SettoFloor(int(sLog[1]))
@@ -159,22 +177,6 @@ func QueueWatchdog() {
 	}
 }
 
-func createFile() bool {
-	var _, err = os.Stat(path)
-
-	// create file if not exists
-	if os.IsNotExist(err) {
-		var file, err = os.Create(path)
-		ioutil.WriteFile(path, []byte{0}, 0644)
-		if isError(err) {
-			return false
-		}
-		defer file.Close()
-		return true
-	}
-	return true
-}
-
 func isError(err error) bool {
 	if err != nil {
 		fmt.Println(err.Error())
@@ -182,7 +184,6 @@ func isError(err error) bool {
 
 	return (err != nil)
 }
-
 
 // Reconnects the elevator "power"
 func Reconnect() {
@@ -201,17 +202,17 @@ func GetDisconnect() bool {
 // Checks if elevator is disconnected from "power"
 func CheckDisconnect() bool {
 	for {
-		counter := 0 
+		counter := 0
 		//for (elevio.GetFloor() == -1 ) {
 		sLog := GetSessionLog()
-		for (len(sLog) > 1 && statemachine.GetDirection() != 0) {
+		for len(sLog) > 1 && statemachine.GetDirection() != 0 {
 			counter = counter + 1
 			fmt.Println("Disconnect?")
-			if counter > 10{
+			if counter > 10 {
 				disconnect = true
 				return true
-			} 
-			time.Sleep(1*time.Second)
-		}	
+			}
+			time.Sleep(1 * time.Second)
+		}
 	}
-}	
+}

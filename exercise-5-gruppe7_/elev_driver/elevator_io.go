@@ -1,5 +1,9 @@
 package elevio
 
+//********
+//Provided from TTK4145 github
+//********
+
 import (
 	"fmt"
 	"net"

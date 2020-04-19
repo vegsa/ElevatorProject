@@ -1,10 +1,8 @@
-package turnofflights
+package turn_off_lights
 
-import(
-	//"fmt"
-	elevio "../elev_driver"	
+import (
+	elevio "../elev_driver"
 	"../network_module/drivers/bcast"
-	//"../network_module/drivers/localip"
 )
 
 // Turns off light in the other elevators workspace.
@@ -14,13 +12,12 @@ var turnOffId int
 var lastId int
 
 type LightOff struct {
-	Floor 		int 
-	MessageId 	int
+	Floor     int
+	MessageId int
 }
 
 var turnOffLightTX = make(chan LightOff)
 var turnOffLightRX = make(chan LightOff)
-
 
 func InitTurnOffLights() {
 	go bcast.Transmitter(20013, turnOffLightTX)
@@ -34,13 +31,13 @@ func TurnOffLightTransmit(floor int) {
 	lightTransmit.MessageId = turnOffId
 	for i := 0; i < 5; i++ {
 		turnOffLightTX <- lightTransmit
-	} 
+	}
 }
 
 func TurnOffLightReceive() {
 	for {
-		select{
-		case turnOff := <- turnOffLightRX:
+		select {
+		case turnOff := <-turnOffLightRX:
 			if turnOff.MessageId == lastId {
 				break
 			}
