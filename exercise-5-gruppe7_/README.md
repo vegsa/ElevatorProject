@@ -1,2 +1,2 @@
-Thee driver-module and the elev_driver-module are provided as project resourses to this TTK4145-project and we are not authors of those modules.
+Thee driver library,the elev_driver library and the driver library, inside the network library, are provided as project resourses to this TTK4145-project and we are not authors of those modules.
 

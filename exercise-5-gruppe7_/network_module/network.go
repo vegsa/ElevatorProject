@@ -23,13 +23,15 @@ var lastOrderId int
 
 var stateId int
 
-var takeOrderMessageId int
-
 var sendOrderMessageId int
 
 var lastMessageId int
 
 var stateIdCheck int
+
+var takeOrderMessageId int
+
+var confirmRecieve int
 
 type Score struct {
 	Id    string
@@ -64,6 +66,8 @@ var stateTX = make(chan StateMsg)
 var stateRX = make(chan StateMsg)
 var takeOrderTX = make(chan takeOrder)
 var takeOrderRx = make(chan takeOrder)
+var confirmTakeTX = make(chan takeOrder)
+var confirmTakeRX = make(chan takeOrder)
 
 func InitNetwork() {
 	// Our id can be anything. Here we pass it on the command line, using
@@ -92,6 +96,8 @@ func InitNetwork() {
 	go bcast.Receiver(20010, stateRX)
 	go bcast.Transmitter(20011, takeOrderTX)
 	go bcast.Receiver(20012, takeOrderRx)
+	go bcast.Transmitter(20015, confirmTakeTX)
+	go bcast.Receiver(20016, confirmTakeRX)
 }
 
 func transmitStates(stateId int) {
@@ -134,8 +140,8 @@ func NetworkReceive() {
 			ElevScore2.Score = hallcall.ComputeScore(order.Dir, order.Order, order.Floor, order.Idle)
 			ElevScore2.Id = order.Id
 			takeId := ""
-			takeOrderMessageId = takeOrderMessageId + 1
-			takeO.MessageId = takeOrderMessageId
+			lastMessageId = lastMessageId + 1
+			takeO.MessageId = lastMessage
 			if ElevScore2.Score >= ElevScore1.Score {
 				takeO.ElevId = ElevScore2.Id
 				for i := 0; i < 5; i++ {
@@ -150,15 +156,14 @@ func NetworkReceive() {
 				takeId = ElevScore1.Id
 			}
 			if takeId == id {
-				to := 1
-				for to == 1 {
+				loop := 1
+				for loop == 1 {
 					select {
-					case takeOrder := <-takeOrderRx:
-						if takeOrder.MessageId != lastMessageId {
-							lastMessageId = takeOrder.MessageId
-							to = 2
+					case takeOrder := <-confirmTakeRX:
+						if takeOrder.MessageId != confirmRecieve {
+							confirmRecieve = takeOrder.MessageId
+							loop = 2
 							if takeOrder.ElevId == id {
-								fmt.Println("Take order2 receive")
 								hallcall.HandleHallCall(order.Order, ElevScore1.Score)
 							}
 						}
@@ -219,8 +224,9 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 			for loop == 1 {
 				select {
 				case takeOrder := <-takeOrderRx:
-					if takeOrder.MessageId != lastMessageId {
+					if takeOrder.MessageId != takeOrderMessageId {
 						lastMessageId = takeOrder.MessageId
+						takeOrderMessageId = lastMessageId
 						loop = 2
 						if takeOrder.ElevId == id {
 							hallcall.HandleHallCall(order, ElevScore1.Score)
@@ -229,7 +235,7 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 							takeO.MessageId = sendOrderMessageId
 							takeO.ElevId = ElevScore2.Id
 							for i := 0; i < 5; i++ {
-								takeOrderTX <- takeO
+								confirmTakeTX <- takeO
 							}
 							elevio.SetButtonLamp(order.Button, order.Floor, true)
 						}
@@ -285,15 +291,17 @@ func ElevDisconnect(order elevio.ButtonEvent) {
 			for loop == 1 {
 				select {
 				case takeOrder := <-takeOrderRx:
-					if takeOrder.MessageId != lastMessageId {
-						loop = 2
+					if takeOrder.MessageId != takeOrderMessageId {
 						lastMessageId = takeOrder.MessageId
+						takeOrderMessageId = lastMessageId
+						loop = 2
 						sendOrderMessageId = sendOrderMessageId + 1
 						takeO.MessageId = sendOrderMessageId
 						takeO.ElevId = states.Id
 						for i := 0; i < 5; i++ {
-							takeOrderTX <- takeO
+							confirmTakeTX <- takeO
 						}
+						elevio.SetButtonLamp(order.Button, order.Floor, true)
 					}
 				}
 			}
