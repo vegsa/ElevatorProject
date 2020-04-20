@@ -4,7 +4,7 @@ package main
 // Multiple elevator system code
 //********
 // Contains the following modules
-// -Order handler
+// -orderhandler
 // -network
 // -orderhandler
 // -hallcallhandler

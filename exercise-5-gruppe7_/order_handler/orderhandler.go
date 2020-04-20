@@ -16,7 +16,7 @@ import (
 
 var numFloors = 4
 
-func handleCabcall(order elevio.ButtonEvent) {
+func handleCabCall(order elevio.ButtonEvent) {
 	idle := statemachine.IsIdle()
 	motorDir := statemachine.GetDirection()
 	atFloor := statemachine.GetFloor()
@@ -36,20 +36,16 @@ func handleCabcall(order elevio.ButtonEvent) {
 func CheckButtons() {
 	drv_buttons := make(chan elevio.ButtonEvent)
 	drv_obstr := make(chan bool)
-	drv_stop := make(chan bool)
 
 	go elevio.PollButtons(drv_buttons)
 	go elevio.PollObstructionSwitch(drv_obstr)
-	go elevio.PollStopButton(drv_stop)
 
 	for {
 		select {
 		case a := <-drv_buttons:
-			fmt.Println("Cab call")
 			if a.Button == 2 {
-				handleCabcall(a)
+				handleCabCall(a)
 			} else {
-				fmt.Println("Hall call")
 				if slog.GetDisconnect() == true {
 					network.ElevDisconnect(a)
 				} else {
@@ -61,14 +57,6 @@ func CheckButtons() {
 			fmt.Printf("obstruct %+v\n", a)
 			if a == false {
 				slog.Reconnect()
-			}
-
-		case a := <-drv_stop:
-			fmt.Printf("stop %+v\n", a)
-			for f := 0; f < numFloors; f++ {
-				for b := elevio.ButtonType(0); b < 3; b++ {
-					elevio.SetButtonLamp(b, f, false)
-				}
 			}
 		}
 	}

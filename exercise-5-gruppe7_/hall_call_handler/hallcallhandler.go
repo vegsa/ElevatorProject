@@ -45,13 +45,9 @@ func HandleHallCall(order elevio.ButtonEvent, score int) {
 		turnofflights.TurnOffLightTransmit(statemachine.GetFloor())
 	} else if score > 1 {
 		slog.StoreInSessionLog(order.Floor, true)
-		SetLights(order)
+		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	} else {
 		slog.StoreInSessionLog(order.Floor, false)
-		SetLights(order)
+		elevio.SetButtonLamp(order.Button, order.Floor, true)
 	}
-}
-
-func SetLights(order elevio.ButtonEvent) {
-	elevio.SetButtonLamp(order.Button, order.Floor, true)
 }

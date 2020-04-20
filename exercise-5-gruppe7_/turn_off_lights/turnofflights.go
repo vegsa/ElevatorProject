@@ -9,7 +9,7 @@ import (
 
 var turnOffId int
 
-var lastId int
+var lastMessageId int
 
 type LightOff struct {
 	Floor     int
@@ -38,10 +38,10 @@ func TurnOffLightReceive() {
 	for {
 		select {
 		case turnOff := <-turnOffLightRX:
-			if turnOff.MessageId == lastId {
+			if turnOff.MessageId == lastMessageId {
 				break
 			}
-			lastId = turnOff.MessageId
+			lastMessageId = turnOff.MessageId
 			elevio.SetButtonLamp(elevio.ButtonType(elevio.BT_HallUp), turnOff.Floor, false)
 			elevio.SetButtonLamp(elevio.ButtonType(elevio.BT_HallDown), turnOff.Floor, false)
 		}

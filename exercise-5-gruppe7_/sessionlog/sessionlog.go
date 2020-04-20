@@ -22,7 +22,7 @@ var disconnect bool
 var thisSession int
 var nextSessions int
 var path = "./log.txt"
-var log []byte //{[]byte,int}
+var log []byte
 var initFlag = true
 var logMutex = &sync.Mutex{}
 
@@ -85,7 +85,6 @@ func StoreInSessionLog(order int, placeInSession bool) {
 				log = append([]byte{byte(thisSession)}, log...)
 				log[1] = byte(order)
 				sortOrders(log[1:thisSession+1], statemachine.GetDirection())
-				fmt.Println("sorted")
 			} else if placeInSession == false {
 				nextSessions = nextSessions + 1
 				log = append(log, byte(order))
@@ -125,7 +124,6 @@ func DeleteOrder() {
 	copy(sLog[1:], sLog[2:])
 	sLog = sLog[:len(sLog)-1]
 	thisSession -= 1
-	fmt.Println("To", thisSession)
 	sLog[0] = byte(thisSession)
 	_ = ioutil.WriteFile(path, sLog, 0644)
 	if len(sLog) < 1 {
@@ -207,7 +205,6 @@ func CheckDisconnect() bool {
 		sLog := GetSessionLog()
 		for len(sLog) > 1 && statemachine.GetDirection() != 0 {
 			counter = counter + 1
-			fmt.Println("Disconnect?")
 			if counter > 10 {
 				disconnect = true
 				return true

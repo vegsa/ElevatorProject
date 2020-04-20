@@ -13,22 +13,23 @@ import (
 	"./drivers/localip"
 )
 
+// ID to the elevator.
 var id string
 
 //Used to handle the package loss. IDs on the different messages.
 var orderId int
 
-var lastOrder int
+var lastOrderId int
 
 var stateId int
 
-var toMessageId int
+var takeOrderMessageId int
 
-var messageTransmit int
+var sendOrderMessageId int
 
-var lastId int
+var lastMessageId int
 
-var idState int
+var stateIdCheck int
 
 type Score struct {
 	Id    string
@@ -83,14 +84,9 @@ func InitNetwork() {
 		id = fmt.Sprintf("peer-%s-%d", localIP, os.Getpid())
 	}
 	fmt.Println("ID 1:", id)
-	// We make channels for sending and receiving our custom data types
 
-	// ... and start the transmitter/receiver pair on some port
-	// These functions can take any number of channels! It is also possible to
-	//  start multiple transmitters/receivers on the same port.
-	//go bcast.Transmitter(20007, scoreTx)
+	// We make channels for sending and receiving our custom data types
 	go bcast.Transmitter(20007, orderTx)
-	//go bcast.Receiver(20007, scoreRx)
 	go bcast.Receiver(20008, orderRx)
 	go bcast.Transmitter(20009, stateTX)
 	go bcast.Receiver(20010, stateRX)
@@ -119,16 +115,16 @@ func NetworkReceive() {
 		Score: -100,
 	}
 
-	var takeo takeOrder
+	var takeO takeOrder
 
 	//Check for new messages
 	for {
 		select {
 		case order := <-orderRx:
-			if order.OrderId == lastOrder {
+			if order.OrderId == lastOrderId {
 				break
 			}
-			lastOrder = order.OrderId
+			lastOrderId = order.OrderId
 			stateId = stateId + 1
 			for i := 0; i < 5; i++ {
 				transmitStates(stateId)
@@ -137,29 +133,29 @@ func NetworkReceive() {
 			ElevScore1.Id = id
 			ElevScore2.Score = hallcall.ComputeScore(order.Dir, order.Order, order.Floor, order.Idle)
 			ElevScore2.Id = order.Id
-			take := ""
-			toMessageId = toMessageId + 1
-			takeo.MessageId = toMessageId
+			takeId := ""
+			takeOrderMessageId = takeOrderMessageId + 1
+			takeO.MessageId = takeOrderMessageId
 			if ElevScore2.Score >= ElevScore1.Score {
-				takeo.ElevId = ElevScore2.Id
+				takeO.ElevId = ElevScore2.Id
 				for i := 0; i < 5; i++ {
-					takeOrderTX <- takeo
+					takeOrderTX <- takeO
 				}
-				take = ElevScore2.Id
+				takeId = ElevScore2.Id
 			} else {
-				takeo.ElevId = ElevScore1.Id
+				takeO.ElevId = ElevScore1.Id
 				for i := 0; i < 5; i++ {
-					takeOrderTX <- takeo
+					takeOrderTX <- takeO
 				}
-				take = ElevScore1.Id
+				takeId = ElevScore1.Id
 			}
-			if take == id {
+			if takeId == id {
 				to := 1
 				for to == 1 {
 					select {
 					case takeOrder := <-takeOrderRx:
-						if takeOrder.MessageId != lastId {
-							lastId = takeOrder.MessageId
+						if takeOrder.MessageId != lastMessageId {
+							lastMessageId = takeOrder.MessageId
 							to = 2
 							if takeOrder.ElevId == id {
 								fmt.Println("Take order2 receive")
@@ -179,7 +175,7 @@ func NetworkReceive() {
 // with the other elevator.
 func NetworkTransmit(order elevio.ButtonEvent) {
 	var newOrder Neworder
-	var takeo takeOrder
+	var takeO takeOrder
 
 	newOrder.Order = order
 	newOrder.Floor = statemachine.GetFloor()
@@ -202,39 +198,38 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 	for i := 0; i < 5; i++ {
 		orderTx <- newOrder
 	}
-	runloop := 1
+	runLoop := 1
 
 	disconn := time.Tick(200 * time.Millisecond)
-	for runloop == 1 {
+	for runLoop == 1 {
 		select {
 		// Communication with the other elevator.
 		case states := <-stateRX:
-			if states.StateId == idState {
+			if states.StateId == stateIdCheck {
 				break
 			}
-			idState = states.StateId
-			runloop = 2
+			stateIdCheck = states.StateId
+			runLoop = 2
 			ElevScore1.Score = hallcall.ComputeScore(newOrder.Dir, order, newOrder.Floor, newOrder.Idle)
 			ElevScore1.Id = id
 			ElevScore2.Score = hallcall.ComputeScore(states.Dir, order, states.AtFloor, states.Idle)
 			ElevScore2.Id = states.Id
 
-			to := 1
-			for to == 1 {
+			loop := 1
+			for loop == 1 {
 				select {
 				case takeOrder := <-takeOrderRx:
-
-					if takeOrder.MessageId != lastId {
-						lastId = takeOrder.MessageId
-						to = 2
+					if takeOrder.MessageId != lastMessageId {
+						lastMessageId = takeOrder.MessageId
+						loop = 2
 						if takeOrder.ElevId == id {
 							hallcall.HandleHallCall(order, ElevScore1.Score)
 						} else {
-							messageTransmit = messageTransmit + 1
-							takeo.MessageId = messageTransmit
-							takeo.ElevId = ElevScore2.Id
+							sendOrderMessageId = sendOrderMessageId + 1
+							takeO.MessageId = sendOrderMessageId
+							takeO.ElevId = ElevScore2.Id
 							for i := 0; i < 5; i++ {
-								takeOrderTX <- takeo
+								takeOrderTX <- takeO
 							}
 							elevio.SetButtonLamp(order.Button, order.Floor, true)
 						}
@@ -243,14 +238,14 @@ func NetworkTransmit(order elevio.ButtonEvent) {
 			}
 		// If the other elevator does not answer.
 		case <-disconn:
-			NetworkDisconnected(order)
-			runloop = 2
+			NetworkDisconnect(order)
+			runLoop = 2
 		}
 	}
 }
 
 // If the other elevator does not answer this handles the order.
-func NetworkDisconnected(order elevio.ButtonEvent) {
+func NetworkDisconnect(order elevio.ButtonEvent) {
 	atFloor := statemachine.GetFloor()
 	motorDir := statemachine.GetDirection()
 	idle := statemachine.IsIdle()
@@ -263,10 +258,10 @@ func NetworkDisconnected(order elevio.ButtonEvent) {
 // but this does not have the ability to take the order.
 func ElevDisconnect(order elevio.ButtonEvent) {
 	var newOrder Neworder
-	var takeo takeOrder
+	var takeO takeOrder
 
 	newOrder.Order = order
-	newOrder.Floor = 50
+	newOrder.Floor = 100 						// Sets this to a high value to make sure that the score is very low when the order is handled.
 	newOrder.Dir = statemachine.GetDirection()
 	newOrder.Id = id
 	newOrder.Idle = statemachine.IsIdle()
@@ -277,27 +272,27 @@ func ElevDisconnect(order elevio.ButtonEvent) {
 		orderTx <- newOrder
 	}
 
-	runloop := 1
-	for runloop == 1 {
+	runLoop := 1
+	for runLoop == 1 {
 		select {
 
 		case states := <-stateRX:
-			if states.StateId == idState {
+			if states.StateId == stateIdCheck {
 				break
 			}
-			runloop = 2
-			to := 1
-			for to == 1 {
+			runLoop = 2
+			loop := 1
+			for loop == 1 {
 				select {
 				case takeOrder := <-takeOrderRx:
-					if takeOrder.MessageId != lastId {
-						to = 2
-						lastId = takeOrder.MessageId
-						messageTransmit = messageTransmit + 1
-						takeo.MessageId = messageTransmit
-						takeo.ElevId = states.Id
+					if takeOrder.MessageId != lastMessageId {
+						loop = 2
+						lastMessageId = takeOrder.MessageId
+						sendOrderMessageId = sendOrderMessageId + 1
+						takeO.MessageId = sendOrderMessageId
+						takeO.ElevId = states.Id
 						for i := 0; i < 5; i++ {
-							takeOrderTX <- takeo
+							takeOrderTX <- takeO
 						}
 					}
 				}
